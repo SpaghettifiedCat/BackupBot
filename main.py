@@ -1,61 +1,80 @@
 # BackupBot.py
-import os
-import wikipedia
 import textwrap
-import json
-import requests
+import os
+from dotenv import load_dotenv
+import traceback
 import discord
+import wptools
+from mediawiki import MediaWiki
+from discord.ext import commands
+import random
 
-TOKEN = DISCORD_TOKEN
-client = discord.Client()
-sink = SINK_SERVER
-backup_channel = BACKUP_CHANNEL_ID
-source = SOURCE_SERVER
-
-WIKI_REQUEST = 'http://en.wikipedia.org/w/api.php?action=query&prop=pageimages&format=json&piprop=original&titles='
-
-def get_wiki_image(page):
-    try:
-        result = wikipedia.search(page, results=1)
-        wikipedia.set_lang('en')
-        wkpage = wikipedia.WikipediaPage(title=result[0])
-        title = wkpage.title
-        response = requests.get(WIKI_REQUEST+title)
-        json_data = json.loads(response.text)
-        img_link = list(json_data['query']['pages'].values())[0]['original']['source']
-        return img_link
-    except:
-        return "No Image Found"
+load_dotenv()
+TOKEN = os.getenv('DISCORD_TOKEN')
+bot = commands.Bot(command_prefix='^')
+wikipage = MediaWiki()
 
 
-
-@client.event
+@bot.event
 async def on_ready():
-    print(f'{client.user} has connected to Discord!')
+    print(f'{bot.user} has connected to Discord!')
 
 
-@client.event
-async def on_message(message):
-    if (not message.author == client.user) and not str(message.guild) == sink:
-        backup_channel = client.get_channel(backup_channel)
-        await backup_channel.send(f'```{message.author} said: \n"{message.content}" \nin {message.channel}```')
-    if not message.author == client.user:
-        if message.content.startswith('^wiki'):
+@bot.command()
+async def wiki(ctx, *args):
+    try:
+        page = ""
+        for i in args:
+            page = page + i + ' '
+        page = page.strip()
+        print(page)
+        summary = wikipage.summary(page, auto_suggest=False)
+        summary_list = textwrap.wrap(summary, 2000, break_long_words=False)
+        for i in summary_list:
+            embedvar = discord.Embed(description=i, color=0x00ff00)
+            await ctx.channel.send(embed=embedvar)
+        try:
+            embedvar = discord.Embed(color=0x00ff00)
+            image = wptools.page(page).get_query()
+            embedvar.set_image(url=image.image('page')['url'])
+            await ctx.channel.send(embed=embedvar)
+        except (ValueError, Exception):
+            print(traceback.format_exc())
             try:
-                query = str(message.content)[5: len(message.content)]
-                query = query.strip()
-                print(query)
-                summary = str(wikipedia.summary(query))
-                summary_list = textwrap.wrap(summary, 2000, break_long_words=False)
-                for i in summary_list:
-                    embedVar = discord.Embed(description=i, color=0x00ff00)
-                    await message.channel.send(embed=embedVar)
-                embedVar = discord.Embed(color=0x00ff00)
-                embedVar.set_image(url=get_wiki_image(query))
-                await message.channel.send(embed=embedVar)
-                await message.channel.send(get_wiki_image(query))
-            except Exception as inst:
-                await message.channel.send("Error raised")
-                await message.channel.send(f'You asked me to search for {query}')
-                await message.channel.send(inst)
-client.run(TOKEN)
+                embedvar = discord.Embed(color=0x00ff00)
+                image = wptools.page(page).get_query()
+                embedvar.set_image(url=image.image('thumb')['url'])
+                await ctx.channel.send(embed=embedvar)
+            except (ValueError, Exception):
+                print(traceback.format_exc())
+                pass
+
+    except Exception as inst:
+        page = ""
+        for i in args:
+            page = page + i + ' '
+        page = page.strip()
+        await ctx.channel.send("Error raised")
+        await ctx.channel.send(f'You asked me to search for {page}')
+        await ctx.channel.send(inst)
+
+
+@bot.command()
+async def ping(ctx):
+    await ctx.channel.send("pong!")
+
+
+@bot.command()
+async def xkcd(ctx, *args):
+    try:
+        url = r'https://xkcd.com/'
+        if args == ():
+            rndm = str(random.randint(1, 2473))
+            url = url + rndm
+            await ctx.channel.send(url)
+        else:
+            await ctx.channel.send(url + args[0])
+    except Exception as e:
+        await ctx.channel.send(e)
+
+bot.run(TOKEN)
